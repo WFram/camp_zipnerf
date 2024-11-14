@@ -1,0 +1,19 @@
+include 'configs/zipnerf/360.gin'
+
+Config.factor = 2
+
+Config.checkpoint_every = 10000
+Config.visualize_every = 10000
+
+Config.render_path = False
+
+Config.max_steps = 200
+
+Model.bg_intensity_range = (1, 1)  # Assume a white background.
+Model.raydist_fn = None
+
+Config.param_regularizers = {
+    'grid_0': (10, @jnp.mean, 2, 1),
+    'grid_1': (10, @jnp.mean, 2, 1),
+    'grid_2': (10, @jnp.mean, 2, 1),
+}
