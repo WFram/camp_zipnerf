@@ -14,12 +14,9 @@ run:
     	--name $(CONTAINER_NAME) \
     	-it \
     	-v /tmp/.X11-unix:/tmp/.X11-unix \
-    	-e HOME=$(USER_HOME) \
     	--net=host \
     	-e DISPLAY=$(DISPLAY) \
-    	-w $(shell pwd) \
-    	-v $(HOME):$(USER_HOME) \
-    	-v /media:/media \
+    	-v $(shell pwd):/app \
     	--ipc host \
     	--gpus all \
     	--device=/dev/dri:/dev/dri \
