@@ -88,6 +88,7 @@ def render_pipeline(config):
   jnp_cameras = flax.jax_utils.replicate(jnp_cameras)
 
   for idx in range(dataset.size):
+    # TODO: WF: immemory : load an image here before using this func
     rays = dataset.generate_ray_batch(idx).rays
     idx_str = idx_to_str(idx)
     logging.info('Evaluating image %d/%d', idx + 1, dataset.size)

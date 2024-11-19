@@ -434,6 +434,8 @@ class Config:
   )
   compute_procrustes_metric: bool = False
 
+  lazy_images: bool = False
+
 
 def define_common_flags():
   # Define the flags used by both train.py and eval.py

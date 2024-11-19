@@ -135,6 +135,7 @@ def align_test_camera(
       lambda x: x[cam_idx : cam_idx + 1], test_cameras
   )
 
+  # TODO: WF: immemory
   image_sizes = np.array(
       [(x.shape[1], x.shape[0]) for x in dataset.images[cam_idx : cam_idx + 1]]
   )

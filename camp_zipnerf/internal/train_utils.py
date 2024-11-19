@@ -321,9 +321,8 @@ def create_train_step(
           # Convert camera to JAX cameras so we can apply the camera deltas.
           # TODO(keunhong): Consider switching the whole codebase to the camera
           # class once we've implemented Fisheye.
-          image_sizes = jnp.array(
-              [(x.shape[1], x.shape[0]) for x in dataset.images]
-          )
+          # TODO: WF: immemory
+          image_sizes = jnp.array(dataset.image_sizes)
           jax_cameras = jax.vmap(dataset.jax_camera_from_tuple_fn)(
               cameras, image_sizes
           )

@@ -461,6 +461,16 @@ def load_arcore_posedata(data_dir, arcore_metadata_file_name):
     return image_names, c2w_poses, pixtocam, distortion_params, camtype
 
 
+def read_image(path: str, factor: int = 0, is_16bit: bool = False) -> np.ndarray:
+    if path.endswith('.exr'):
+        image = image_io.load_exr(path)
+    else:
+        image = image_io.load_img(path, is_16bit)
+    if factor > 1:
+        image = image_utils.downsample(image, factor)
+    return image if path.endswith('.exr') else image / 255
+
+
 class Dataset(metaclass=abc.ABCMeta):
     """Dataset Base Class.
 
@@ -532,6 +542,7 @@ class Dataset(metaclass=abc.ABCMeta):
         self._load_normals = config.compute_normal_metrics
         self._num_border_pixels_to_mask = config.num_border_pixels_to_mask
         self._flattened = False
+        self._lazy_images = config.lazy_images
 
         self.split = utils.DataSplit(split)
         self.data_dir = data_dir
@@ -569,12 +580,14 @@ class Dataset(metaclass=abc.ABCMeta):
 
         # Providing type comments for these attributes, they must be correctly
         # initialized by _load_renderings() (see docstring) in any subclass.
-        self.images: Union[np.ndarray, List[np.ndarray]] = None
+        # TODO: WF: immemory
+        self.images: Union[np.ndarray, List[np.ndarray], List[str]] = None
         self.camtoworlds: np.ndarray = None
         self.pixtocams: np.ndarray = None
         self.height: int = None
         self.width: int = None
         self.focal: float = None
+        self.factor: int = config.factor
 
         # Load data from disk using provided config parameters.
         self._load_renderings(config, **kwargs)
@@ -645,10 +658,19 @@ class Dataset(metaclass=abc.ABCMeta):
             projection_type=self.camtype,
         )
 
+        # TODO: WF: immemory
+        if not self._lazy_images:
+            self.image_sizes = np.array([(x.shape[1], x.shape[0]) for x in self.images])
+        else:
+            self.image_sizes: Union[list[tuple[int, int]], np.ndarray] = []
+            for x in self.images:
+                x = read_image(x, self.factor)
+                self.image_sizes.append((x.shape[1], x.shape[0]))
+
         # Don't generate jax_cameras when the render path is set, since we don't
         # need them anyway and the hijacking logic makes it difficult.
         if not self.render_path:
-            image_sizes = np.array([(x.shape[1], x.shape[0]) for x in self.images])
+            image_sizes = np.array(self.image_sizes)
             self.jax_cameras = jax.vmap(self.jax_camera_from_tuple_fn)(
                 self.cameras, image_sizes
             )
@@ -751,7 +773,27 @@ class Dataset(metaclass=abc.ABCMeta):
             if rgb is not None:
                 batch['rgb'] = rgb
             else:
-                batch['rgb'] = self.images[cam_idx, pix_y_int, pix_x_int]
+                # TODO: WF: immemory
+                if not self._lazy_images:
+                    # batch['rgb'] = self.images[cam_idx, pix_y_int, pix_x_int]
+                    images = [self.images[idx[0][0]][pix_y_int, pix_x_int] for idx in cam_idx]
+                    batch['rgb'] = np.stack(images, axis=0)
+                else:
+                    assert False
+                    """ if isinstance(cam_idx, np.ndarray):
+                        print("READ IMAGES")
+                        # images = [read_image(self.images[idx[0][0]], self.factor) for idx in cam_idx]
+                        images = read_image(self.images[cam_idx[0]], self.factor)
+                        print("FINISHED READING IMAGES")
+                        images = np.stack(images, axis=0)
+                        rgb, alpha = images[..., :3], images[..., -1:]
+                        images = rgb * alpha + (1.0 - alpha)  # Use a white background.
+                        batch['rgb'] = images[pix_y_int, pix_x_int]
+                    else:
+                        image = read_image(self.images[cam_idx], self.factor)
+                        rgb, alpha = image[..., :3], image[..., -1:]
+                        image = rgb * alpha + (1.0 - alpha)  # Use a white background.
+                        batch['rgb'] = image[pix_y_int, pix_x_int] """
         if self._load_disps:
             batch['disps'] = self.disp_images[cam_idx, pix_y_int, pix_x_int]
         if self._load_normals:
@@ -764,6 +806,7 @@ class Dataset(metaclass=abc.ABCMeta):
         if self._flattened:
             # In the case where all images have been flattened into an array of pixels
             # take a random sample from this entire array.
+            assert not self._lazy_images, "Not implemented yet"
             n_pixels = self.indices_flattened.shape[0]
             metaindices = np.random.randint(0, n_pixels, (self._batch_size,))
             indices_flattened = self.indices_flattened[metaindices]
@@ -814,6 +857,8 @@ class Dataset(metaclass=abc.ABCMeta):
         self, cam_idx, n_samples=10000
     ) -> utils.Batch:
         """Generate flattened ray batch for a specified camera in the dataset."""
+        # TODO: WF: immemory
+        assert not self._lazy_images, "Not implemented yet"
         images_flattened, indices_flattened = flatten_data(
             self.images[cam_idx][None]
         )
@@ -832,9 +877,11 @@ class Dataset(metaclass=abc.ABCMeta):
         """Generate ray batch for a specified camera in the dataset."""
         # Generate rays for all pixels in the image.
         if self._flattened and not self.render_path:
+            assert not self._lazy_images, "Not implemented yet"
             pix_x_int, pix_y_int = camera_utils.pixel_coordinates(
                 self.widths[cam_idx], self.heights[cam_idx]
             )
+            # TODO: WF: immemory
             rgb = self.images[cam_idx]
             return self._make_ray_batch(pix_x_int, pix_y_int, cam_idx, rgb=rgb)
         else:
@@ -879,8 +926,7 @@ class Dataset(metaclass=abc.ABCMeta):
         cameras = (pixtocams, poses, distortion_params, *cameras[3:])
 
         if return_jax_cameras:
-            image_sizes = np.array([(x.shape[1], x.shape[0]) for x in self.images])
-            return jax.vmap(self.jax_camera_from_tuple_fn)(cameras, image_sizes)
+            return jax.vmap(self.jax_camera_from_tuple_fn)(cameras, np.array(self.image_sizes))
 
         return cameras
 
@@ -926,6 +972,8 @@ class Dataset(metaclass=abc.ABCMeta):
         ])
         poses = swap_y_z @ poses
 
+        # TODO: WF: immemory
+        assert not self._lazy_images, "Not implemented yet"
         height, width = self.images[0].shape[:2]
         default_focal = width / (2 * np.tan(np.radians(72 / 2)))
         pixtocams = np.linalg.inv(
@@ -1032,11 +1080,15 @@ class Blender(Dataset):
     def _load_renderings(self, config):
         """Load images from disk."""
         if config.render_path:
-            raise ValueError('render_path cannot be used for the blender dataset.')
+            raise ValueError(
+                'render_path cannot be used for the blender dataset.')
 
         _, camtoworlds, pixtocams, _, _, nameprefixes = load_ngp_posedata(
-            self.data_dir, f'transforms_{self.split.value}.json'
-        )
+            self.data_dir, f'transforms_{self.split.value}.json')
+        
+        def get_img_path(nameprefix):
+            assert not self._load_disps and not self._load_normals, "Not implemented yet"
+            return os.path.join(self.data_dir, nameprefix) + '.png', None, None
 
         def get_imgs(nameprefix):
             fprefix = os.path.join(self.data_dir, nameprefix)
@@ -1051,7 +1103,9 @@ class Blender(Dataset):
                 return image
 
             if self._use_tiffs:
-                channels = [get_img(f'_{ch}.tiff') for ch in ['R', 'G', 'B', 'A']]
+                channels = [
+                    get_img(f'_{ch}.tiff') for ch in ['R', 'G', 'B', 'A']
+                ]
                 # Convert image to sRGB color space.
                 image = image_utils.linear_to_srgb(np.stack(channels, axis=-1))
             elif self._use_exrs:
@@ -1060,32 +1114,59 @@ class Blender(Dataset):
                 image = get_img('.png') / 255.0
 
             if self._load_disps:
-                disp_image = get_img('_disp.tiff', is_16bit=True)[..., :1] / 65535.0
+                disp_image = get_img('_disp.tiff',
+                                     is_16bit=True)[..., :1] / 65535.0
             else:
                 disp_image = None
             if self._load_normals:
-                normal_image = get_img('_normal.png')[..., :3] * 2.0 / 255.0 - 1.0
+                normal_image = get_img('_normal.png')[
+                    ..., :3] * 2.0 / 255.0 - 1.0
             else:
                 normal_image = None
 
+            assert not self._load_disps, "Not implemented yet"
+            assert not self._load_normals, "Not implemented yet"
             return image, disp_image, normal_image
 
-        all_imgs = [get_imgs(z) for z in nameprefixes]
+        all_imgs = [get_imgs(z) for z in nameprefixes] if not self._lazy_images \
+            else [get_img_path(z) for z in nameprefixes]
+        # TODO: WF: immemory
         images, disp_images, normal_images = zip(*all_imgs)
 
-        self.images = np.stack(images, axis=0)
+        # TODO: WF: immemory
+        # self.images = np.stack(images, axis=0) if not self._lazy_images else images
+        self.images = images
         if self._load_disps:
+            assert not self._lazy_images, "Not implemented yet"
             self.disp_images = np.stack(disp_images, axis=0)
         if self._load_normals:
+            assert not self._lazy_images, "Not implemented yet"
             self.normal_images = np.stack(normal_images, axis=0)
-            self.alphas = self.images[..., -1]
+            # TODO: WF: immemory
+            # self.alphas = self.images[..., -1]
+            self.alphas = np.array([image[..., -1] for image in self.images])
 
-        rgb, alpha = self.images[..., :3], self.images[..., -1:]
-        self.images = rgb * alpha + (1.0 - alpha)  # Use a white background.
-        self.height, self.width = self.images[0].shape[:2]
+        # TODO: WF: immemory
+        if not self._lazy_images:
+            for image in self.images:
+                rgb, alpha = image[..., :3], image[..., -1:]
+                image = rgb * alpha + (1.0 - alpha)  # Use a white background.
+            self.height, self.width = self.images[0].shape[:2]
+        else:
+            def get_img(path, is_16bit=False):
+                if path.endswith('.exr'):
+                    image = image_io.load_exr(path)
+                else:
+                    image = image_io.load_img(path, is_16bit)
+                if config.factor > 1:
+                    image = image_utils.downsample(image, config.factor)
+                return image
+            image = get_img(self.images[0])
+            self.height, self.width = image.shape[:2]
         self.camtoworlds = camtoworlds
         if config.factor > 1:
-            pixtocams = pixtocams @ np.diag([config.factor, config.factor, 1.0])
+            pixtocams = pixtocams @ np.diag(
+                [config.factor, config.factor, 1.0])
             pixtocams = pixtocams.astype(np.float32)
         self.pixtocams = pixtocams
 

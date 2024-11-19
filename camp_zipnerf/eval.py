@@ -171,9 +171,9 @@ def main(unused_argv):
 
     procrustes_cameras = None
     if config.compute_procrustes_metric and config.optimize_cameras:
-      test_image_sizes = np.array(
-          [(x.shape[1], x.shape[0]) for x in test_dataset.images]
-      )
+      # TODO: WF: immemory
+      assert not config.lazy_images, "Not implemented yet"
+      test_image_sizes = np.array(test_dataset.image_sizes)
       test_jax_cameras = jax.vmap(test_dataset.jax_camera_from_tuple_fn)(
           test_dataset.cameras, test_image_sizes
       )
@@ -427,6 +427,8 @@ def main(unused_argv):
         for i, f in enumerate(factors):
           i0 = i * n_images
           i1 = (i + 1) * n_images
+          # TODO: WF: immemory
+          assert not config.lazy_images, "Not implemented yet"
           image_shapes = np.array([z.shape for z in test_dataset.images[i0:i1]])
           if not np.all(image_shapes == image_shapes[0]):
             raise ValueError(
