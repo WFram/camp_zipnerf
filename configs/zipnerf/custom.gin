@@ -2,12 +2,16 @@ include 'configs/zipnerf/360.gin'
 
 Config.factor = 2
 
+Config.dataset_loader = 'blender'
+Config.near = 2
+Config.far = 6
+
 Config.checkpoint_every = 10000
 Config.visualize_every = 10000
 
 Config.render_path = False
 
-Config.max_steps = 200
+Config.max_steps = 200000
 
 Model.bg_intensity_range = (1, 1)  # Assume a white background.
 Model.raydist_fn = None
