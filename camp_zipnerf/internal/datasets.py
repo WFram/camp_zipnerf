@@ -19,6 +19,7 @@ import abc
 import copy
 import functools
 import json
+import math
 import os
 from os import path
 import pathlib
@@ -801,6 +802,31 @@ class Dataset(metaclass=abc.ABCMeta):
                 cam_idx = np.random.randint(0, self._n_examples, (1,))
             rgb = None
 
+            if self._batching == utils.BatchingMethod.ALL_IMAGES:
+                def next_powerof2(num: int):
+                    return pow(2, math.ceil(math.log(num) / math.log(2)))
+                batch_alpha = self.alphas[cam_idx, pix_y_int, pix_x_int]
+                ids_nonzero_alpha = np.where(batch_alpha == 1)
+                num_nonzero_alpha = ids_nonzero_alpha[0].shape[0]
+                next_batch_size = next_powerof2(num_nonzero_alpha)
+                diff = next_batch_size - num_nonzero_alpha
+                pix_x_int, pix_y_int, cam_idx = pix_x_int[ids_nonzero_alpha], \
+                    pix_y_int[ids_nonzero_alpha], \
+                    cam_idx[ids_nonzero_alpha]
+                pix_x_int, pix_y_int, cam_idx = pix_x_int.reshape((pix_x_int.shape[0], 1, 1)), \
+                    pix_y_int.reshape((pix_y_int.shape[0], 1, 1)), \
+                    cam_idx.reshape((cam_idx.shape[0], 1, 1))
+                extra_pix_x_int = np.random.randint(
+                    lower_border, self.width - upper_border, (diff, 1, 1)
+                )
+                extra_pix_y_int = np.random.randint(
+                    lower_border, self.height - upper_border, (diff, 1, 1)
+                )
+                extra_cam_idx = np.random.randint(0, self._n_examples, (diff, 1, 1))
+                pix_x_int = np.concatenate((pix_x_int, extra_pix_x_int))
+                pix_y_int = np.concatenate((pix_y_int, extra_pix_y_int))
+                cam_idx = np.concatenate((cam_idx, extra_cam_idx))
+
         if self.lossmult is not None:
             lossmult = self.lossmult[cam_idx].reshape(-1, 1)
         else:
@@ -1078,7 +1104,7 @@ class Blender(Dataset):
             self.disp_images = np.stack(disp_images, axis=0)
         if self._load_normals:
             self.normal_images = np.stack(normal_images, axis=0)
-            self.alphas = self.images[..., -1]
+        self.alphas = self.images[..., -1]
 
         rgb, alpha = self.images[..., :3], self.images[..., -1:]
         self.images = rgb * alpha + (1.0 - alpha)  # Use a white background.
