@@ -141,6 +141,7 @@ class Config:
   batching: str = 'all_images'  # Batch composition, [single_image, all_images].
   batch_size: int = 16384  # The number of rays/pixels in each batch.
   patch_size: int = 1  # Resolution of patches sampled for training batches.
+  num_ray_samples: int = 148000  # Number of ray samples
   factor: int = 0  # The downsample factor of images, 0 for no downsampling.
   # Integer downsampling factors to use for multiscale training.
   # Note 1 is included by default! Use [2, 4, 8] for mip-NeRF 2021 convention.

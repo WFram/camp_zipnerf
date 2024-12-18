@@ -6,12 +6,27 @@ Config.dataset_loader = 'blender'
 Config.near = 2
 Config.far = 6
 
-Config.checkpoint_every = 10000
-Config.visualize_every = 10000
+Config.checkpoint_every = 5000
+Config.checkpoint_keep = 20
+Config.visualize_every = 5000
+
+# train (scene_samples_origin)
+Config.max_steps = 100000
+Config.early_exit_steps = 30000
+Config.num_ray_samples = 140000
+Config.batch_size = 16384
+Config.lr_delay_steps = 10000
+Config.lr_init = 0.0025
+Config.lr_final = 0.00025
+
+# eval
+# Config.batch_size = 16384
+# Config.lr_delay_steps = 10000
+# Config.lr_init = 0.0025
+# Config.lr_final = 0.00025
 
 Config.render_path = False
 
-Config.max_steps = 200000
 
 Model.bg_intensity_range = (1, 1)  # Assume a white background.
 Model.raydist_fn = None

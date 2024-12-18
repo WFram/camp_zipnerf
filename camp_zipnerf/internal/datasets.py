@@ -533,6 +533,7 @@ class Dataset(metaclass=abc.ABCMeta):
         self._load_normals = config.compute_normal_metrics
         self._num_border_pixels_to_mask = config.num_border_pixels_to_mask
         self._flattened = False
+        self._num_ray_samples = config.num_ray_samples
 
         self.split = utils.DataSplit(split)
         self.data_dir = data_dir
@@ -777,7 +778,8 @@ class Dataset(metaclass=abc.ABCMeta):
             # We assume all images in the dataset are the same resolution, so we use
             # the same width/height for sampling all pixels coordinates in the batch.
             # Batch/patch sampling parameters.
-            num_patches = self._batch_size // self._patch_size**2
+            # num_patches = self._batch_size // self._patch_size**2
+            num_patches = self._num_ray_samples
             lower_border = self._num_border_pixels_to_mask
             upper_border = self._num_border_pixels_to_mask + self._patch_size - 1
             # Random pixel patch x-coordinates.
